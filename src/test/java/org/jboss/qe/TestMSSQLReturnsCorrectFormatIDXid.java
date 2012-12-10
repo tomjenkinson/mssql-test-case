@@ -5,7 +5,6 @@ import static org.junit.Assert.assertTrue;
 import java.sql.Connection;
 import java.sql.SQLException;
 import java.sql.Statement;
-import java.util.Arrays;
 import java.util.Random;
 
 import javax.sql.XAConnection;
@@ -61,7 +60,13 @@ public class TestMSSQLReturnsCorrectFormatIDXid {
 			stmt.execute("INSERT INTO tomsTest VALUES (1)");
 			xaResource.prepare(xid);
 			Xid[] recover = xaResource.recover(0);
-			assertTrue(Arrays.asList(recover).contains(xid));
+			assertTrue(recover.length == 1);
+			assertTrue(recover[0].getFormatId() == xid.getFormatId());
+			assertTrue(recover[0].getBranchQualifier().equals(
+					xid.getBranchQualifier()));
+			assertTrue(recover[0].getGlobalTransactionId().equals(
+					xid.getGlobalTransactionId()));
+			xaResource.commit(xid, true);
 			xaConnection.close();
 		}
 
