@@ -5,6 +5,7 @@ import static org.junit.Assert.assertTrue;
 import java.sql.Connection;
 import java.sql.SQLException;
 import java.sql.Statement;
+import java.util.Arrays;
 import java.util.Random;
 
 import javax.sql.XAConnection;
@@ -12,6 +13,8 @@ import javax.transaction.xa.XAException;
 import javax.transaction.xa.XAResource;
 import javax.transaction.xa.Xid;
 
+import org.junit.After;
+import org.junit.Before;
 import org.junit.Test;
 
 import com.microsoft.sqlserver.jdbc.SQLServerDataSource;
@@ -21,31 +24,58 @@ import com.microsoft.sqlserver.jdbc.SQLServerXADataSource;
  * Unit test for simple App.
  */
 public class TestMSSQLReturnsCorrectFormatIDXid {
+	String tableName = "tomsTest";
+
+	@Before
+	public void beforeTest() throws SQLException {
+		SQLServerDataSource dataSource = new com.microsoft.sqlserver.jdbc.SQLServerDataSource();
+
+		dataSource.setURL(System.getProperty("url"));
+		Connection connection = dataSource.getConnection(
+				System.getProperty("user"), System.getProperty("password"));
+		Statement stmt = connection.createStatement();
+
+		try {
+			stmt.executeUpdate("DROP TABLE " + tableName);
+		} catch (SQLException ex) {
+			if (!ex.getSQLState().equals("S0005") && ex.getErrorCode() != 3701) {
+				throw ex;
+			}
+		}
+
+		String statement = "CREATE TABLE " + tableName
+				+ " (tomsInt INTEGER NOT NULL, PRIMARY KEY(tomsInt))";
+		stmt.executeUpdate(statement);
+		connection.close();
+	}
 
 	@Test
 	public void test() throws SQLException, XAException {
+		SQLServerXADataSource dataSource = new com.microsoft.sqlserver.jdbc.SQLServerXADataSource();
 
-		{
-			SQLServerDataSource dataSource = new com.microsoft.sqlserver.jdbc.SQLServerDataSource();
+		dataSource.setURL(System.getProperty("url"));
+		XAConnection xaConnection = dataSource.getXAConnection(
+				System.getProperty("user"), System.getProperty("password"));
+		XAResource xaResource = xaConnection.getXAResource();
+		Xid xid = new XidImple();
+		xaResource.start(xid, 0);
+		Statement stmt = xaConnection.getConnection().createStatement();
+		stmt.execute("INSERT INTO " + tableName + " VALUES (1)");
+		xaResource.prepare(xid);
+		Xid[] recover = xaResource.recover(XAResource.TMSTARTRSCAN);
+		xaResource.recover(XAResource.TMENDRSCAN);
+		assertTrue(recover.length == 1);
+		assertTrue(Arrays.equals(recover[0].getBranchQualifier(),
+				xid.getBranchQualifier()));
+		assertTrue(Arrays.equals(recover[0].getGlobalTransactionId(),
+				xid.getGlobalTransactionId()));
+		assertTrue(recover[0].getFormatId() == xid.getFormatId());
+		xaResource.commit(xid, true);
+		xaConnection.close();
+	}
 
-			dataSource.setURL(System.getProperty("url"));
-			Connection connection = dataSource.getConnection(
-					System.getProperty("user"), System.getProperty("password"));
-			Statement stmt = connection.createStatement();
-
-			try {
-				stmt.executeUpdate("DROP TABLE tomsTest");
-			} catch (SQLException ex) {
-				if (!ex.getSQLState().equals("S0005")
-						&& ex.getErrorCode() != 3701) {
-					throw ex;
-				}
-			}
-
-			String statement = "CREATE TABLE tomsTest (tomsInt INTEGER NOT NULL, PRIMARY KEY(tomsInt))";
-			stmt.executeUpdate(statement);
-			connection.close();
-		}
+	@After
+	public void afterTest() throws SQLException, XAException {
 
 		{
 			SQLServerXADataSource dataSource = new com.microsoft.sqlserver.jdbc.SQLServerXADataSource();
@@ -54,29 +84,20 @@ public class TestMSSQLReturnsCorrectFormatIDXid {
 			XAConnection xaConnection = dataSource.getXAConnection(
 					System.getProperty("user"), System.getProperty("password"));
 			XAResource xaResource = xaConnection.getXAResource();
-			Xid xid = new XidImple();
-			xaResource.start(xid, 0);
-			Statement stmt = xaConnection.getConnection().createStatement();
-			stmt.execute("INSERT INTO tomsTest VALUES (1)");
-			xaResource.prepare(xid);
-			Xid[] recover = xaResource.recover(0);
-			assertTrue(recover.length == 1);
-			assertTrue(recover[0].getFormatId() == xid.getFormatId());
-			assertTrue(recover[0].getBranchQualifier().equals(
-					xid.getBranchQualifier()));
-			assertTrue(recover[0].getGlobalTransactionId().equals(
-					xid.getGlobalTransactionId()));
-			xaResource.commit(xid, true);
+			Xid[] recover = xaResource.recover(XAResource.TMSTARTRSCAN);
+			for (int i = 0; i < recover.length; i++) {
+				xaResource.rollback(recover[i]);
+			}
+			recover = xaResource.recover(XAResource.TMENDRSCAN);
 			xaConnection.close();
 		}
-
 		{
 			SQLServerDataSource dataSource = new com.microsoft.sqlserver.jdbc.SQLServerDataSource();
 			dataSource.setURL(System.getProperty("url"));
 			Connection connection = dataSource.getConnection(
 					System.getProperty("user"), System.getProperty("password"));
 			Statement stmt = connection.createStatement();
-			stmt.executeUpdate("DROP TABLE tomsTest");
+			stmt.executeUpdate("DROP TABLE " + tableName);
 			connection.close();
 		}
 	}
