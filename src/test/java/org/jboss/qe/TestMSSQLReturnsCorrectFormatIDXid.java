@@ -70,7 +70,7 @@ public class TestMSSQLReturnsCorrectFormatIDXid {
 		assertTrue(Arrays.equals(recover[0].getGlobalTransactionId(),
 				xid.getGlobalTransactionId()));
 		assertTrue(recover[0].getFormatId() == xid.getFormatId());
-		xaResource.commit(xid, true);
+		xaResource.commit(xid, false);
 		xaConnection.close();
 	}
 
